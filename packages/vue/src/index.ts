@@ -58,6 +58,7 @@ export function createAbby<
     User
   >
 ) {
+  const requiresCookieConsent = abbyConfig.cookies?.disableByDefault === true;
   // Core assigns weights and cookie preferences in place. A shared config
   // must not carry those mutations into another server request.
   const config = {
@@ -118,6 +119,9 @@ export function createAbby<
           abby.setLocalOverrides(
             `${getABStorageKey(config.projectId, "$_abcc_$")}=${encodeURIComponent(consent)}`
           );
+        } else if (requiresCookieConsent) {
+          // A reused core instance may still hold the previous consent grant.
+          abby.disableCookies();
         }
         abby.setLocalOverrides(document.cookie);
       }

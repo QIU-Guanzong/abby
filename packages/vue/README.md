@@ -116,6 +116,12 @@ honor `cookies.disableByDefault` and `cookies.expiresInDays`. Saved consent is
 read before initializing or refreshing variant cookies. No browser storage is
 accessed on the server.
 
+With `cookies.disableByDefault: true`, removing saved consent disables cookie
+writes when a provider from the same factory remounts. A new grant through
+`__abby__.enableCookies()` saves consent and enables persistence again. Removing
+consent does not erase existing variant cookies, and external cookie changes
+are not watched while the provider stays mounted.
+
 ### Devtools
 
 ```ts

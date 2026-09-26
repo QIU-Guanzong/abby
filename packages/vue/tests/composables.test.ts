@@ -25,7 +25,9 @@ const initialData: AbbyDataResponse = {
     { name: "limit", value: 3 },
   ],
 };
-function configure() {
+function configure(
+  cookies: { disableByDefault?: boolean } = { disableByDefault: true }
+) {
   return createAbby({
     projectId: "vue-tests",
     apiUrl: "http://127.0.0.1:9876/",
@@ -34,7 +36,7 @@ function configure() {
     tests: { checkout: { variants: ["old", "new"] } },
     flags: ["banner", "missing"],
     remoteConfig: { title: "String", limit: "Number", missing: "String" },
-    cookies: { disableByDefault: true },
+    cookies,
     settings: {
       flags: { fallbackValues: { missing: true } },
       remoteConfig: { defaultValues: { String: "Default" } },
@@ -442,6 +444,80 @@ it.each([false, true])(
     expect(writeCookie).not.toHaveBeenCalled();
     if (!existing)
       expect(document.cookie).not.toContain("__abby__ab__consent_checkout=");
+  }
+);
+
+it.each([false, true])(
+  "restores opt-in after consent is removed on remount (retained variant: %s)",
+  async (retainVariant) => {
+    const consentKey = "__abby__ab__vue-tests_$_abcc_$";
+    const variantKey = "__abby__ab__vue-tests_checkout";
+    Cookies.set(consentKey, "true");
+    const abby = configure();
+    const first = mount(abby, () => abby.useAbby("checkout"), initialData);
+    await nextTick();
+    expect(Cookies.get(variantKey)).toBe("new");
+    first.app.unmount();
+
+    Cookies.remove(consentKey);
+    if (!retainVariant) Cookies.remove(variantKey);
+    const writeCookie = vi.spyOn(Cookies, "set");
+    const second = mount(abby, () => abby.useAbby("checkout"), initialData);
+    await nextTick();
+    expect(second.result.variant.value).toBe("new");
+    expect(writeCookie).not.toHaveBeenCalled();
+    expect(abby.__abby__.getConfig().cookies?.disableByDefault).toBe(true);
+    expect(Cookies.get(consentKey)).toBeUndefined();
+    expect(Cookies.get(variantKey)).toBe(retainVariant ? "new" : undefined);
+
+    // An explicit new grant must work in this provider and survive remounting.
+    abby.__abby__.enableCookies();
+    expect(Cookies.get(consentKey)).toBe("true");
+    expect(Cookies.get(variantKey)).toBe("new");
+    second.app.unmount();
+    Cookies.remove(variantKey);
+    mount(abby, () => abby.useAbby("checkout"), initialData);
+    await nextTick();
+    expect(Cookies.get(variantKey)).toBe("new");
+    expect(abby.__abby__.getConfig().cookies?.disableByDefault).toBe(false);
+  }
+);
+
+it("honors a saved refusal when remounting a previously consenting factory", async () => {
+  const consentKey = "__abby__ab__vue-tests_$_abcc_$";
+  Cookies.set(consentKey, "true");
+  const abby = configure();
+  const first = mount(abby, () => abby.useAbby("checkout"), initialData);
+  first.app.unmount();
+  Cookies.set(consentKey, "false");
+  const writeCookie = vi.spyOn(Cookies, "set");
+  mount(abby, () => abby.useAbby("checkout"), initialData);
+  await nextTick();
+  expect(writeCookie).not.toHaveBeenCalled();
+  expect(abby.__abby__.getConfig().cookies?.disableByDefault).toBe(true);
+});
+
+it.each([{}, { disableByDefault: false }])(
+  "preserves default-allow and explicit disabling on remount (%j)",
+  async (cookies) => {
+    const variantKey = "__abby__ab__vue-tests_checkout";
+    const abby = configure(cookies);
+    const first = mount(abby, () => abby.useAbby("checkout"), initialData);
+    expect(Cookies.get(variantKey)).toBe("new");
+    first.app.unmount();
+    Cookies.remove(variantKey);
+    const second = mount(abby, () => abby.useAbby("checkout"), initialData);
+    expect(Cookies.get(variantKey)).toBe("new");
+
+    abby.__abby__.disableCookies();
+    second.app.unmount();
+    Cookies.remove(variantKey);
+    const writeCookie = vi.spyOn(Cookies, "set");
+    mount(abby, () => abby.useAbby("checkout"), initialData);
+    await nextTick();
+    expect(writeCookie).not.toHaveBeenCalled();
+    expect(Cookies.get(variantKey)).toBeUndefined();
+    expect(abby.__abby__.getConfig().cookies?.disableByDefault).toBe(true);
   }
 );
 
