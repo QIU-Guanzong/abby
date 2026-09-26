@@ -129,7 +129,11 @@ export function createAbby<
         unsubscribe = abby.subscribe(() => {
           context.data.value = abby.getProjectData();
         });
-        if (props.initialData) return;
+        if (props.initialData) {
+          // Child mount hooks run first and may update targeting before we subscribe.
+          context.data.value = abby.getProjectData();
+          return;
+        }
         // Select the first variant only after the server's weights arrive.
         // Fetch without init so a retired provider cannot overwrite a new one.
         const load =

@@ -11,6 +11,7 @@ import {
   defineComponent,
   h,
   nextTick,
+  onMounted,
   shallowRef,
 } from "vue";
 import { renderToString } from "vue/server-renderer";
@@ -470,4 +471,42 @@ it("respects disabled cookies and applies typed user targeting updates", async (
   await nextTick();
   expect(result.value).toBe(true);
   expect(document.cookie).not.toContain("__abby__ab__vue-tests");
+});
+
+it("observes targeting updates from a child's mount hook", async () => {
+  const abby = configure();
+  const data: AbbyDataResponse = {
+    ...initialData,
+    flags: [
+      {
+        name: "banner",
+        value: false,
+        ruleSet: [
+          {
+            propertyName: "customer",
+            propertyType: "boolean",
+            operator: "eq",
+            value: true,
+            thenValue: true,
+          },
+        ],
+      },
+    ],
+  };
+  const child = defineComponent({
+    setup() {
+      const flag = abby.useFeatureFlag("banner");
+      onMounted(() => abby.updateUserProperties({ customer: true }));
+      return () => h("p", String(flag.value));
+    },
+  });
+  const app = createApp({
+    render: () => h(abby.AbbyProvider, { initialData: data }, () => h(child)),
+  });
+  apps.push(app);
+  const element = document.createElement("div");
+  app.mount(element);
+  await nextTick();
+  expect(abby.getFeatureFlagValue("banner")).toBe(true);
+  expect(element.textContent).toBe("true");
 });
