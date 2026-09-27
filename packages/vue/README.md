@@ -97,10 +97,80 @@ mounts. Include an appropriate placeholder where the test will appear. Cookie
 overrides and user targeting must also agree between server and client if they
 affect server-rendered flags/config.
 
-For Nuxt, create the factory inside the per-request Nuxt plugin and provide its
-return value through the application. Render its `AbbyProvider` around the
-consumers, and transfer initial data using Nuxt's normal SSR data facilities.
-This package does not install a Nuxt module or global auto-imports.
+### Nuxt 4
+
+Create the factory inside a universal Nuxt plugin: Nuxt runs it for each server
+request and again for the client application. `useAsyncData` transfers only the
+project data in the hydration payload; the factory and its mutable core state
+stay in the current application. Do not give this plugin a `.client` suffix if
+flags or remote configuration should render on the server.
+
+```ts
+// app/plugins/abby.ts
+import type { AbbyDataResponse } from "@tryabby/core";
+import { createAbby } from "@tryabby/vue";
+
+export default defineNuxtPlugin(async () => {
+  const abby = createAbby({
+    projectId: "your-project-id",
+    environments: ["production"],
+    currentEnvironment: "production",
+    tests: { checkout: { variants: ["classic", "compact"] } },
+    flags: ["banner"],
+    remoteConfig: { title: "String", limit: "Number" },
+  });
+  const { data, error } = await useAsyncData("abby-initial", () =>
+    $fetch<AbbyDataResponse>("/api/abby")
+  );
+  if (error.value || !data.value) {
+    throw createError({ statusCode: 503, statusMessage: "Abby data unavailable" });
+  }
+  return { provide: { abby, abbyInitialData: data.value } };
+});
+```
+
+`/api/abby` is an endpoint supplied by your application, not by this package.
+It must return the core `AbbyDataResponse` shape. Only return data suitable for
+the browser; keep any service credentials in the server endpoint. Choose the
+error policy appropriate for your application rather than passing missing data
+to the provider unintentionally.
+
+```vue
+<!-- app/app.vue -->
+<script setup lang="ts">
+const { $abby, $abbyInitialData } = useNuxtApp();
+const { AbbyProvider } = $abby;
+</script>
+
+<template>
+  <AbbyProvider :initial-data="$abbyInitialData">
+    <NuxtPage />
+  </AbbyProvider>
+</template>
+```
+
+Call the Abby composables in a descendant page or component's setup, where the
+provider is available. They must not be called in the plugin or in `app.vue`
+before its provider is rendered. Nuxt infers the injected factory's types:
+
+```vue
+<!-- app/pages/index.vue -->
+<script setup lang="ts">
+const { $abby } = useNuxtApp();
+const banner = $abby.useFeatureFlag("banner");
+const title = $abby.useRemoteConfig("title");
+const { variant, onAct } = $abby.useAbby("checkout");
+</script>
+
+<template>
+  <p v-if="banner">{{ title }}</p>
+  <button v-if="variant" type="button" @click="onAct">{{ variant }}</button>
+</template>
+```
+
+The variant still waits until client mount, as described above. Cookie overrides
+and user targeting need the same server/client handling as other SSR consumers.
+This is a plugin recipe, not a Nuxt module or global Abby auto-imports.
 
 ## Other helpers
 
